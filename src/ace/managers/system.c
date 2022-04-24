@@ -96,6 +96,7 @@ static struct Library *s_pCiaResource[CIA_COUNT];
 #if defined(BARTMAN_GCC)
 struct DosLibrary *DOSBase = 0;
 struct ExecBase *SysBase = 0;
+static struct Message *s_pReturnMsg = 0;
 #endif
 
 //----------------------------------------------------------- INTERRUPT HANDLERS
@@ -466,6 +467,16 @@ void systemCreate(void) {
 	SysBase = *((struct ExecBase**)4UL);
 #endif
 
+  struct Process *pProcess = (struct Process *)FindTask(NULL);
+#if defined(BARTMAN_GCC)
+	if(!pProcess->pr_CLI) {
+		// Called from the workbench - get the message for later reply
+		// Taken from https://github.com/alpine9000/EWGM/blob/master/game/wbstartup.i
+		WaitPort(&pProcess->pr_MsgPort); // Wait for the message
+		s_pReturnMsg = GetMsg(&pProcess->pr_MsgPort); // Get the message for later reply
+	}
+#endif
+
 	GfxBase = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 0L);
 	if (!GfxBase) {
 		systemKill("Can't open Gfx Library!\n");
@@ -479,7 +490,6 @@ void systemCreate(void) {
 	}
 
   // Determine original stack size
-  struct Process *pProcess = (struct Process *)FindTask(NULL);
 	char *pStackLower = (char *)pProcess->pr_Task.tc_SPLower;
 	ULONG ulStackSize = (char *)pProcess->pr_Task.tc_SPUpper - pStackLower;
 	if(pProcess->pr_CLI) {
@@ -579,6 +589,12 @@ void systemDestroy(void) {
 	CloseLibrary((struct Library *) GfxBase);
 	logWrite("Closing dos.library...\n");
 	CloseLibrary((struct Library *) DOSBase);
+
+#if defined(BARTMAN_GCC)
+	if(s_pReturnMsg) {
+		ReplyMsg(s_pReturnMsg);
+	}
+#endif
 }
 
 void systemUnuse(void) {
